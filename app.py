@@ -75,6 +75,19 @@ TOPICS = {
     "Support": ["support", "service", "help", "customer"]
 }
 
+TEXT_COLUMN_CANDIDATES = [
+    "review",
+    "feedback",
+    "text",
+    "tweet",
+    "full_text",
+    "content",
+    "body",
+    "message",
+    "comment",
+    "caption",
+]
+
 # ================= FUNCTIONS =================
 def clean_text(text):
     text = str(text).lower()
@@ -91,6 +104,13 @@ def detect_topic(text):
             if w in text:
                 return topic
     return "Other"
+
+def detect_text_column(columns):
+    normalized = {str(col).strip().lower(): col for col in columns}
+    for candidate in TEXT_COLUMN_CANDIDATES:
+        if candidate in normalized:
+            return normalized[candidate]
+    return None
 
 # ================= SIDEBAR =================
 st.sidebar.title("📌 About Project")
@@ -126,35 +146,46 @@ with tab1:
     feedback = st.text_area("Enter customer feedback", height=140)
 
     if st.button("Analyze Feedback"):
-        cleaned = clean_text(feedback)
-        vector = tfidf.transform([cleaned])
-        pred = model.predict(vector)[0]
-        prob = model.predict_proba(vector)[0]
-        confidence = max(prob) * 100
-        topic = detect_topic(cleaned)
-
-        st.markdown("### Result")
-        if pred == 1:
-            st.markdown(f"<span class='badge-pos'>Positive</span> &nbsp; Topic: <b>{topic}</b>", unsafe_allow_html=True)
+        if not feedback.strip():
+            st.warning("Enter customer feedback first")
         else:
-            st.markdown(f"<span class='badge-neg'>Negative</span> &nbsp; Topic: <b>{topic}</b>", unsafe_allow_html=True)
-            if confidence > 80:
-                st.warning("🚨 High-confidence negative feedback")
+            cleaned = clean_text(feedback)
+            vector = tfidf.transform([cleaned])
+            pred = model.predict(vector)[0]
+            prob = model.predict_proba(vector)[0]
+            confidence = max(prob) * 100
+            topic = detect_topic(cleaned)
 
-        st.metric("Prediction Confidence", f"{confidence:.2f}%")
+            st.markdown("### Result")
+            if pred == 1:
+                st.markdown(f"<span class='badge-pos'>Positive</span> &nbsp; Topic: <b>{topic}</b>", unsafe_allow_html=True)
+            else:
+                st.markdown(f"<span class='badge-neg'>Negative</span> &nbsp; Topic: <b>{topic}</b>", unsafe_allow_html=True)
+                if confidence > 80:
+                    st.warning("🚨 High-confidence negative feedback")
+
+            st.metric("Prediction Confidence", f"{confidence:.2f}%")
 
 # ================= TAB 2 =================
 with tab2:
-    uploaded = st.file_uploader("Upload CSV (column name must be: review)", type=["csv"])
+    uploaded = st.file_uploader("Upload CSV", type=["csv"])
 
     if uploaded is not None:
         df = pd.read_csv(uploaded, engine="python")
+        text_column = detect_text_column(df.columns)
 
-        if "review" not in df.columns:
-            st.error("CSV must contain column named 'review'")
+        if text_column is None:
+            st.error("CSV must contain a review, feedback, text, tweet, full_text, content, body, message, comment, or caption column")
         else:
             results = []
-            for r in df["review"]:
+            text_values = df[text_column].fillna("").astype(str).str.strip()
+            text_values = text_values[text_values.astype(bool)]
+
+            if text_values.empty:
+                st.error("The selected text column is empty")
+                st.stop()
+
+            for r in text_values:
                 c = clean_text(r)
                 v = tfidf.transform([c])
                 p = model.predict(v)[0]
